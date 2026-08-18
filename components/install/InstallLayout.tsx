@@ -82,7 +82,7 @@ export function InstallLayout({
             className="mb-8 text-center"
           >
             <h1 className="text-2xl font-bold tracking-wider text-[var(--br-hologram-white)]">
-              <span className="br-text-glow-cyan">SMART</span>
+              <span className="br-text-glow-cyan">NAHIDE</span>
               <span className="text-[var(--br-neon-magenta)]">ZAP</span>
             </h1>
             <p className="text-xs tracking-[0.3em] text-[var(--br-muted-cyan)] mt-2 uppercase">
