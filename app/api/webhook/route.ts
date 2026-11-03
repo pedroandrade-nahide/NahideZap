@@ -138,6 +138,40 @@ function extractInboundText(message: any): string {
   return ''
 }
 
+/**
+ * A Meta manda o nome do perfil do cliente no bloco `contacts` do webhook,
+ * em paralelo ao bloco `messages`. Cada contato traz `wa_id` (o telefone) e
+ * `profile.name`. Casamos pelo telefone para nao trocar o nome entre pessoas
+ * quando o lote trouxer mais de um contato.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractProfileName(value: any, from: string): string | null {
+  const contacts = value?.contacts
+  if (!Array.isArray(contacts) || !from) return null
+
+  for (const contact of contacts) {
+    const waId = contact?.wa_id
+    if (typeof waId !== 'string') continue
+    // Comparacao tolerante: a Meta nem sempre devolve exatamente o mesmo
+    // formato do campo `from` (ex.: o nono digito em numeros brasileiros).
+    if (waId !== from && !waId.endsWith(from) && !from.endsWith(waId)) continue
+
+    const name = contact?.profile?.name
+    if (typeof name === 'string' && name.trim()) return name.trim()
+  }
+
+  return null
+}
+
+/**
+ * Tipos de payload que chegam no bloco `messages` mas NAO sao mensagem de
+ * verdade e nao devem gerar resposta do agente.
+ *
+ * `reaction`: reagir com emoji chega como mensagem. Isso ja causou resposta
+ * duplicada em producao (dois "Por nada!" identicos no congresso de agosto).
+ */
+const IGNORED_INBOUND_TYPES = new Set(['reaction'])
+
 function isOptOutKeyword(textRaw: string): boolean {
   const t = String(textRaw || '')
     .trim()
@@ -943,9 +977,18 @@ export async function POST(request: NextRequest) {
         for (const message of messages) {
           const from = message.from
           const messageType = message.type
+
+          // Descarta reacoes de emoji antes de qualquer processamento.
+          // Elas chegam como mensagem e disparavam geracao de resposta.
+          if (IGNORED_INBOUND_TYPES.has(messageType)) {
+            console.log(`🚫 Ignorando payload do tipo "${messageType}" de ${from} (nao gera resposta)`)
+            continue
+          }
+
           const text = extractInboundText(message)
           const phoneNumberId = change?.value?.metadata?.phone_number_id || null
-          console.log(`📩 Incoming message from ${from}: ${messageType}${text ? ` | text="${text}"` : ''}`)
+          const profileName = extractProfileName(change?.value, from)
+          console.log(`📩 Incoming message from ${from}: ${messageType}${text ? ` | text="${text}"` : ''}${profileName ? ` | name="${profileName}"` : ''}`)
 
           // =================================================================
           // T046-T047: Persist to Inbox and trigger AI if mode=bot
@@ -959,6 +1002,7 @@ export async function POST(request: NextRequest) {
               timestamp: message.timestamp,
               mediaUrl: message.image?.url || message.video?.url || message.audio?.url || message.document?.url || null,
               phoneNumberId: phoneNumberId || undefined,
+              profileName,
             })
             console.log(`📥 Inbox: conversation=${inboxResult.conversationId}, message=${inboxResult.messageId}, ai=${inboxResult.triggeredAI}`)
           } catch (inboxError) {

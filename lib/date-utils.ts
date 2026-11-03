@@ -103,3 +103,58 @@ export function formatShortDate(date: Date | string | null | undefined): string 
   const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
   return `${d.getDate()} ${months[d.getMonth()]}`
 }
+
+/**
+ * Rótulo do separador de dia no histórico de mensagens.
+ *
+ * Retorna "Hoje", "Ontem", o dia da semana (para os últimos 7 dias) ou a data
+ * por extenso. Usado para quebrar a lista de mensagens por dia, já que antes
+ * só aparecia o horário e conversas antigas se misturavam com as de hoje.
+ */
+export function formatDayLabel(date: Date | string | null | undefined): string {
+  if (!date) return ''
+
+  const d = typeof date === 'string' ? new Date(date) : date
+  if (Number.isNaN(d.getTime())) return ''
+
+  const startOfDay = (value: Date) =>
+    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime()
+
+  const now = new Date()
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000)
+
+  if (diffDays === 0) return 'Hoje'
+  if (diffDays === 1) return 'Ontem'
+
+  if (diffDays > 1 && diffDays < 7) {
+    const weekday = d.toLocaleDateString('pt-BR', { weekday: 'long' })
+    return weekday.charAt(0).toUpperCase() + weekday.slice(1)
+  }
+
+  const sameYear = d.getFullYear() === now.getFullYear()
+  return d.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'long',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  })
+}
+
+/**
+ * Diz se duas datas caem no mesmo dia do calendário local.
+ */
+export function isSameCalendarDay(
+  a: Date | string | null | undefined,
+  b: Date | string | null | undefined
+): boolean {
+  if (!a || !b) return false
+
+  const da = typeof a === 'string' ? new Date(a) : a
+  const db = typeof b === 'string' ? new Date(b) : b
+  if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return false
+
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  )
+}

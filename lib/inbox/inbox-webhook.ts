@@ -14,6 +14,7 @@ import { getSupabaseAdmin } from '@/lib/supabase'
 import { normalizePhoneNumber } from '@/lib/phone-formatter'
 import { inboxDb, isHumanModeExpired, switchToBotMode, findConversationByPhoneLightweight } from './inbox-db'
 import { cancelDebounce } from '@/lib/ai/agents/chat-agent'
+import { ensureContactWithProfileName } from './contact-profile'
 import { sendWhatsAppMessage } from '@/lib/whatsapp-send'
 import { Client } from '@upstash/qstash'
 import { redis } from '@/lib/redis'
@@ -67,6 +68,8 @@ export interface InboundMessagePayload {
   mediaUrl?: string | null
   /** Phone number ID that received the message */
   phoneNumberId?: string
+  /** Nome do perfil do WhatsApp, vindo do bloco `contacts` do webhook */
+  profileName?: string | null
 }
 
 export interface StatusUpdatePayload {
@@ -102,6 +105,13 @@ export async function handleInboundMessage(
   const normalizedPhone = normalizePhoneNumber(payload.from)
   const supabase = getSupabaseAdmin()
 
+  // Garante contato + nome do perfil ANTES de gravar a mensagem, para que a
+  // conversa já nasça vinculada ao contato certo e o Inbox mostre o nome.
+  const resolvedContactId = await ensureContactWithProfileName(
+    normalizedPhone,
+    payload.profileName
+  )
+
   // Tenta usar RPC otimizada (V2)
   // Fix aplicado em 20260203000000_fix_process_inbound_message_types.sql
   if (supabase) {
@@ -117,7 +127,7 @@ export async function handleInboundMessage(
           timestamp: payload.timestamp,
           phone_number_id: payload.phoneNumberId,
         },
-        p_contact_id: null, // Contact lookup done inside RPC if needed
+        p_contact_id: resolvedContactId, // resolvido acima; null = RPC busca por telefone
       })
 
       if (!error && data) {
@@ -181,7 +191,7 @@ export async function handleInboundMessage(
   }
 
   // FALLBACK: Versão legacy (4-5 queries)
-  return handleInboundMessageLegacy(payload, normalizedPhone)
+  return handleInboundMessageLegacy(payload, normalizedPhone, resolvedContactId)
 }
 
 /**
@@ -189,7 +199,8 @@ export async function handleInboundMessage(
  */
 async function handleInboundMessageLegacy(
   payload: InboundMessagePayload,
-  normalizedPhone: string
+  normalizedPhone: string,
+  resolvedContactId: string | null = null
 ): Promise<{
   conversationId: string
   messageId: string
@@ -200,7 +211,7 @@ async function handleInboundMessageLegacy(
 
   if (!conversation) {
     // Paraleliza: busca contato enquanto prepara criação da conversa
-    const contactId = await findContactId(normalizedPhone)
+    const contactId = resolvedContactId ?? (await findContactId(normalizedPhone))
     const fullConversation = await inboxDb.createConversation({
       phone: normalizedPhone,
       contact_id: contactId || undefined,

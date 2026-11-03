@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { MessageBubble } from './MessageBubble'
 import { MessageInput } from './MessageInput'
 import { ConversationHeader } from './ConversationHeader'
+import { formatDayLabel, isSameCalendarDay } from '@/lib/date-utils'
 import type {
   InboxConversation,
   InboxMessage,
@@ -257,17 +258,38 @@ export function MessagePanel({
               // Determine grouping
               const prevMessage = messages[index - 1]
               const nextMessage = messages[index + 1]
-              const isFirstInGroup = !prevMessage || prevMessage.direction !== message.direction
-              const isLastInGroup = !nextMessage || nextMessage.direction !== message.direction
+
+              // Separador de dia: a primeira mensagem sempre abre um dia, e
+              // depois disso so quando a data muda em relacao a anterior.
+              const showDaySeparator =
+                !prevMessage ||
+                !isSameCalendarDay(prevMessage.created_at, message.created_at)
+              const dayLabel = showDaySeparator ? formatDayLabel(message.created_at) : ''
+
+              // Mensagem que abre um dia nunca e agrupada com a anterior.
+              const isFirstInGroup =
+                showDaySeparator || !prevMessage || prevMessage.direction !== message.direction
+              const isLastInGroup =
+                !nextMessage ||
+                nextMessage.direction !== message.direction ||
+                !isSameCalendarDay(message.created_at, nextMessage.created_at)
 
               return (
-                <MessageBubble
-                  key={message.id}
-                  message={message}
-                  agentName={conversation?.ai_agent?.name}
-                  isFirstInGroup={isFirstInGroup}
-                  isLastInGroup={isLastInGroup}
-                />
+                <React.Fragment key={message.id}>
+                  {showDaySeparator && dayLabel && (
+                    <div className="flex items-center justify-center py-3 select-none">
+                      <span className="px-3 py-1 rounded-full bg-[var(--ds-bg-surface)] border border-[var(--ds-border-subtle)] text-[10px] font-medium uppercase tracking-wide text-[var(--ds-text-muted)]">
+                        {dayLabel}
+                      </span>
+                    </div>
+                  )}
+                  <MessageBubble
+                    message={message}
+                    agentName={conversation?.ai_agent?.name}
+                    isFirstInGroup={isFirstInGroup}
+                    isLastInGroup={isLastInGroup}
+                  />
+                </React.Fragment>
               )
             })}
           </div>
